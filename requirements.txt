@@ -1,0 +1,16 @@
+# face_id requirements
+# Install with: pip install -r requirements.txt
+
+# Core inference runtime
+onnxruntime>=1.17.0           # CPU. Replace with onnxruntime-gpu for CUDA / Jetson.
+
+# Computer vision
+opencv-python>=4.8.0
+numpy>=1.24.0
+Pillow>=10.0.0                # ImageTk display in ui.py
+gradio>=4.0.0                 # demo.py Gradio UI
+
+# Optional: for ROS 2 integration (Phase 2+), install ros-humble-cv-bridge separately.
+
+# Dev / testing
+pytest>=7.0.0
