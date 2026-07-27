@@ -84,9 +84,11 @@ def safe_enroll(name: str, image_bgr: np.ndarray) -> dict:
         }
 
 
-def safe_verify_with_details(image_bgr: np.ndarray) -> dict:
+def safe_verify_with_details(
+    image_bgr: np.ndarray, threshold: float = None,
+) -> dict:
     try:
-        return verify_with_details(image_bgr)
+        return verify_with_details(image_bgr, threshold=threshold)
     except FileNotFoundError as e:
         return {
             "verified": False,
@@ -187,7 +189,10 @@ def do_enroll(
         return "Add at least one photo.", gallery_text()
 
     reload_gallery()
-    already_existed = name in get_gallery().list_identities()
+    gallery = get_gallery()
+    already_existed = name in gallery.list_identities()
+    if already_existed:
+        gallery.remove(name)
 
     bgr1 = pil_or_array_to_bgr(photo1)
     result = safe_enroll(name, bgr1)
@@ -211,34 +216,41 @@ def do_enroll(
     return _enroll_status_message(name, count, already_existed), gallery_text()
 
 
+def format_match_status(result: dict) -> str:
+    if not result.get("face_found"):
+        return "<p style='color:#888;margin:0;font-size:1.1em;'>— Searching...</p>"
+    if result["verified"]:
+        name = result["match"]
+        conf = result["confidence"]
+        return (
+            f"<p style='color:#16a34a;margin:0;font-size:1.1em;font-weight:600;'>"
+            f"✓ {name}  ({conf:.2f})</p>"
+        )
+    return "<p style='color:#dc2626;margin:0;font-size:1.1em;font-weight:600;'>✗ Unknown</p>"
+
+
 def live_identify(
     frame: Union[Image.Image, np.ndarray, None],
+    threshold: float,
 ) -> Tuple[Optional[np.ndarray], str]:
     if frame is None:
-        return None, "Click record on the webcam to start."
+        return None, "<p style='color:#888;margin:0;'>Click record on the webcam to start.</p>"
 
     if not models_available():
         arr = pil_or_array_to_bgr(frame)
         rgb = bgr_to_rgb(arr) if arr is not None else None
-        return rgb, setup_instructions()
+        return rgb, f"<p style='margin:0;'>{setup_instructions()}</p>"
 
     bgr = pil_or_array_to_bgr(frame)
-    result = safe_verify_with_details(bgr)
+    result = safe_verify_with_details(bgr, threshold=threshold)
 
     if result.get("error"):
-        return bgr_to_rgb(bgr), result["error"]
+        return bgr_to_rgb(bgr), f"<p style='margin:0;'>{result['error']}</p>"
 
     annotated = draw_result(bgr.copy(), result)
     rgb = bgr_to_rgb(annotated)
 
-    if not result["face_found"]:
-        status = "Searching..."
-    elif result["verified"]:
-        status = f"Match: {result['match']}  (confidence {result['confidence']:.2f})"
-    else:
-        status = f"Unknown  (best score {result['confidence']:.2f})"
-
-    return rgb, status
+    return rgb, format_match_status(result)
 
 
 def refresh_gallery() -> Tuple[str, gr.Dropdown]:
@@ -256,11 +268,18 @@ def remove_identity(name: str) -> Tuple[str, gr.Dropdown]:
 # ── App ───────────────────────────────────────────────────────────────────────
 
 def build_app() -> gr.Blocks:
-    with gr.Blocks(title="face_id demo", css=DEMO_CSS) as demo:
+    with gr.Blocks(title="face_id — few-shot face verification", css=DEMO_CSS) as demo:
         if models_available():
-            gr.Markdown("### face_id demo — enroll a face, then identify live")
+            gr.Markdown(
+                "# face_id — few-shot face verification\n\n"
+                "Enroll 1–2 photos of a person, then identify them live from your webcam."
+            )
         else:
-            gr.Markdown(f"### Setup required\n\n{setup_instructions()}")
+            gr.Markdown(
+                "# face_id — few-shot face verification\n\n"
+                "Enroll 1–2 photos of a person, then identify them live from your webcam.\n\n"
+                f"### Setup required\n\n{setup_instructions()}"
+            )
 
         with gr.Tabs():
             # ── Tab 1: Enroll ─────────────────────────────────────────────
@@ -273,6 +292,10 @@ def build_app() -> gr.Blocks:
                     )
                     enroll_btn = gr.Button("Enroll", variant="primary", scale=1)
 
+                gr.Markdown(
+                    "Tip: use a clear frontal photo in good lighting. "
+                    "Two photos improve accuracy."
+                )
                 with gr.Row():
                     photo1 = gr.Image(
                         label="Photo",
@@ -317,14 +340,18 @@ def build_app() -> gr.Blocks:
                         streaming=True,
                         height=360,
                     )
-                match_status = gr.Textbox(
-                    label="Current match",
-                    interactive=False,
-                    lines=1,
+                threshold_slider = gr.Slider(
+                    minimum=0.2,
+                    maximum=0.8,
+                    value=config.SIMILARITY_THRESHOLD,
+                    step=0.05,
+                    label="Match threshold  (lower = more matches, higher = stricter)",
                 )
+                gr.Markdown("**Current match**")
+                match_status = gr.Markdown()
                 webcam_in.stream(
                     live_identify,
-                    inputs=[webcam_in],
+                    inputs=[webcam_in, threshold_slider],
                     outputs=[webcam_out, match_status],
                     time_limit=600,
                     stream_every=0.15,
