@@ -1,5 +1,7 @@
 # face_id
 
+**DEMO VIDEO:** https://youtu.be/Zql5vPRC_ms?si=dan_39d2CsGTli3X
+
 Lightweight few-shot face verification library.  
 Enroll 1–5 reference photos per person. Verify identities from images or live video.  
 Portable across projects — drone sim, web app, robotics stack, or anything else.
